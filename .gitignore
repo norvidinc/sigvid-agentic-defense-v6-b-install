@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+/dist/
+/downloads/
+*.deb
+*.tar.gz
+*.db*
+.env
+.env.*
+*private*.pem
+*.key
+credential.json
