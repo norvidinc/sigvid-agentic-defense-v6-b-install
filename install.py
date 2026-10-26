@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Download and verify the Sigvid V6 B MVP agent, then enroll interactively.
-Python 3.11+ and OpenSSL are required; installation targets Ubuntu 24.04 amd64.
+Python 3.10+ and OpenSSL are required; installation targets Ubuntu 22.04/24.04 amd64.
 No enrollment token or GitHub credential is accepted on the command line.
 """
 import argparse
@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import re
 import shutil
 import subprocess
@@ -18,8 +19,9 @@ from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 REPOSITORY = 'norvidinc/sigvid-agentic-defense-v6-b-install'
-DEFAULT_VERSION = '0.1.0'
-ASSET = 'sigvid-agent-ubuntu24.04-amd64.tar.gz'
+DEFAULT_VERSION = '0.1.1'
+ASSET = 'sigvid-agent-ubuntu-amd64.tar.gz'
+SUPPORTED_UBUNTU = ['22.04', '24.04']
 PROJECT = 'sigvid-agentic-defense-v6-b'
 MAX_ARCHIVE = 64 * 1024 * 1024
 ALLOWED_DOWNLOAD_HOSTS = {'github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com'}
@@ -45,6 +47,21 @@ def validate_version(value):
     if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', value):
         raise InstallError('Use a fixed version such as 0.1.0; latest and arbitrary URLs are not accepted.')
     return value
+
+
+def release_layout(version):
+    # Keep the immutable original release verifiable with the new bootstrap.
+    if version == '0.1.0':
+        return 1, 'ubuntu-24.04-amd64', 'sigvid-agent-ubuntu24.04-amd64.tar.gz', ['24.04']
+    return 2, 'ubuntu-amd64', ASSET, SUPPORTED_UBUNTU
+
+
+def validate_host(version):
+    release = platform.freedesktop_os_release()
+    if (release.get('ID') != 'ubuntu' or release.get('VERSION_ID') not in release_layout(version)[3]
+            or platform.machine() != 'x86_64'):
+        supported = ' or '.join(release_layout(version)[3])
+        raise InstallError(f'Release {version} requires Ubuntu {supported} LTS on amd64/x86_64.')
 
 
 def validate_download_url(value):
@@ -89,9 +106,11 @@ def verify_manifest(path, signature, version):
     if not isinstance(manifest, dict):
         raise InstallError('Invalid release manifest.')
     asset = manifest.get('asset')
-    if (manifest.get('schema') != 1 or manifest.get('project') != PROJECT
-            or manifest.get('version') != version or manifest.get('platform') != 'ubuntu-24.04-amd64'
-            or not isinstance(asset, dict) or asset.get('name') != ASSET
+    schema, target, name, supported = release_layout(version)
+    if (manifest.get('schema') != schema or manifest.get('project') != PROJECT
+            or manifest.get('version') != version or manifest.get('platform') != target
+            or (schema == 2 and manifest.get('supported_ubuntu') != supported)
+            or not isinstance(asset, dict) or asset.get('name') != name
             or not isinstance(asset.get('sha256'), str) or not re.fullmatch('[0-9a-f]{64}', asset['sha256'])
             or type(asset.get('size')) is not int or not 0 < asset['size'] <= MAX_ARCHIVE):
         raise InstallError('Release manifest does not match this project, version or platform.')
@@ -99,9 +118,11 @@ def verify_manifest(path, signature, version):
 
 
 def verify_archive(path, manifest):
+    digest = hashlib.sha256()
     with path.open('rb') as source:
-        digest = hashlib.file_digest(source, 'sha256').hexdigest()
-    if path.stat().st_size != manifest['asset']['size'] or digest != manifest['asset']['sha256']:
+        while chunk := source.read(65536):
+            digest.update(chunk)
+    if path.stat().st_size != manifest['asset']['size'] or digest.hexdigest() != manifest['asset']['sha256']:
         raise InstallError('Package archive does not match the signed release manifest.')
 
 
@@ -141,10 +162,12 @@ def main():
     parser.add_argument('--check', action='store_true', help='Verify release and host/backend prerequisites; do not install')
     parser.add_argument('--download-only', type=Path, metavar='NEW_DIRECTORY', help='Save verified release files; do not install or enroll')
     args = parser.parse_args()
-    if sys.version_info < (3, 11):
-        raise InstallError('Python 3.11 or newer is required.')
+    if sys.version_info < (3, 10):
+        raise InstallError('Python 3.10 or newer is required; use the supported Ubuntu system Python.')
     if not args.download_only and os.geteuid() != 0:
         raise InstallError('Run with sudo on the Ubuntu server, or use --download-only DIRECTORY.')
+    if not args.download_only:
+        validate_host(args.version)
     if args.download_only and args.download_only.exists():
         raise InstallError('Download directory already exists; choose a new directory to preserve existing files.')
     if not shutil.which('openssl'):
@@ -157,8 +180,8 @@ def main():
         download(base + '/release.json', manifest_path, 65536)
         download(base + '/release.json.sig', signature, 4096)
         manifest = verify_manifest(manifest_path, signature, args.version)
-        archive = temporary / ASSET
-        download(base + '/' + ASSET, archive, manifest['asset']['size'])
+        archive = temporary / manifest['asset']['name']
+        download(base + '/' + archive.name, archive, manifest['asset']['size'])
         verify_archive(archive, manifest)
         bundle = unpack(archive, temporary, args.version)
         print('Release signature, archive checksum and package layout verified.', flush=True)

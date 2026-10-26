@@ -15,6 +15,19 @@ spec.loader.exec_module(installer)
 
 
 class InstallerTests(unittest.TestCase):
+    def test_supported_hosts_and_legacy_release_restriction(self):
+        for version in ('22.04', '24.04'):
+            with patch.object(installer.platform, 'freedesktop_os_release', return_value={'ID': 'ubuntu', 'VERSION_ID': version}), patch.object(installer.platform, 'machine', return_value='x86_64'):
+                installer.validate_host('0.1.1')
+                if version == '22.04':
+                    with self.assertRaises(installer.InstallError):
+                        installer.validate_host('0.1.0')
+                else:
+                    installer.validate_host('0.1.0')
+        for distro, version, arch in [('ubuntu', '20.04', 'x86_64'), ('debian', '22.04', 'x86_64'), ('ubuntu', '22.04', 'aarch64')]:
+            with patch.object(installer.platform, 'freedesktop_os_release', return_value={'ID': distro, 'VERSION_ID': version}), patch.object(installer.platform, 'machine', return_value=arch), self.assertRaises(installer.InstallError):
+                installer.validate_host('0.1.1')
+
     def test_fixed_version_only(self):
         self.assertEqual(installer.validate_version('0.1.0'), '0.1.0')
         for value in ['latest', 'v0.1.0', '../main', '0.1.0;id', '01.1.0', '0.1.0/asset']:
@@ -30,12 +43,14 @@ class InstallerTests(unittest.TestCase):
             installer.ReleaseRedirects().redirect_request(None, None, 302, '', {}, 'http://github.com/x')
 
     def test_signed_manifest_and_wrong_version(self):
-        manifest = ROOT / 'releases/v0.1.0/release.json'
-        signature = ROOT / 'releases/v0.1.0/release.json.sig'
-        parsed = installer.verify_manifest(manifest, signature, '0.1.0')
-        self.assertEqual(parsed['project'], installer.PROJECT)
-        with self.assertRaises(installer.InstallError):
-            installer.verify_manifest(manifest, signature, '9.9.9')
+        for release in (ROOT / 'releases').iterdir():
+            manifest = release / 'release.json'
+            signature = release / 'release.json.sig'
+            with self.subTest(release=release.name):
+                parsed = installer.verify_manifest(manifest, signature, release.name[1:])
+                self.assertEqual(parsed['project'], installer.PROJECT)
+                with self.assertRaises(installer.InstallError):
+                    installer.verify_manifest(manifest, signature, '9.9.9')
 
     def test_tampered_manifest_or_signature_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:

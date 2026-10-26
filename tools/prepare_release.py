@@ -32,11 +32,14 @@ def main():
     with tempfile.TemporaryDirectory() as directory:
         installer.unpack(args.bundle, Path(directory), args.version)
     data = args.bundle.read_bytes()
-    manifest = {'schema': 1, 'project': installer.PROJECT, 'version': args.version, 'platform': 'ubuntu-24.04-amd64', 'asset': {'name': installer.ASSET, 'sha256': hashlib.sha256(data).hexdigest(), 'size': len(data)}}
+    schema, platform, asset, supported = installer.release_layout(args.version)
+    manifest = {'schema': schema, 'project': installer.PROJECT, 'version': args.version, 'platform': platform, 'asset': {'name': asset, 'sha256': hashlib.sha256(data).hexdigest(), 'size': len(data)}}
+    if schema == 2:
+        manifest['supported_ubuntu'] = supported
     if not 0 < len(data) <= installer.MAX_ARCHIVE:
         parser.error('Invalid archive size.')
     args.output.mkdir(parents=True)
-    shutil.copyfile(args.bundle, args.output / installer.ASSET)
+    shutil.copyfile(args.bundle, args.output / asset)
     (args.output / 'release.json').write_text(json.dumps(manifest, indent=2) + '\n')
     subprocess.run(['openssl', 'dgst', '-sha256', '-sign', str(args.signing_key), '-out', str(args.output / 'release.json.sig'), str(args.output / 'release.json')], check=True)
     installer.verify_manifest(args.output / 'release.json', args.output / 'release.json.sig', args.version)

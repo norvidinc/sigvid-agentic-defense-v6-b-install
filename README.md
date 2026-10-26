@@ -2,7 +2,9 @@
 
 Public agent downloads and enrollment client for the **B MVP implementation** in `mvp-v1/`. This repository distributes the installer and release packages. Your Sigvid backend issues enrollment tokens and receives evidence.
 
-Supported host: **Ubuntu Server 24.04 LTS, amd64/x86_64**, with Python 3.12, OpenSSL and sudo. Response mode is **shadow only**. This is an early MVP release with deterministic SSH-failure, watched-file and source-health detections; it does not include adaptive AI investigation.
+Supported host: **Ubuntu Server 22.04 or 24.04 LTS, amd64/x86_64**, with the system Python 3.10 or newer, OpenSSL and sudo. Response mode is **shadow only**. This is an early MVP release with deterministic SSH-failure, watched-file and source-health detections; it does not include adaptive AI investigation.
+
+Release `v0.1.1` adds Ubuntu 22.04 with its default Python 3.10. The original immutable `v0.1.0` supports Ubuntu 24.04 only. There is no need to replace the system Python to use the new release.
 
 ## Enroll your server
 
@@ -11,14 +13,14 @@ Supported host: **Ubuntu Server 24.04 LTS, amd64/x86_64**, with Python 3.12, Ope
 
    ```sh
    curl --fail --show-error --location --proto '=https' --tlsv1.2 \
-     https://raw.githubusercontent.com/norvidinc/sigvid-agentic-defense-v6-b-install/v0.1.0/install.py \
+     https://raw.githubusercontent.com/norvidinc/sigvid-agentic-defense-v6-b-install/v0.1.1/install.py \
      --output sigvid-install.py
    ```
 
 3. Run it with **your reachable backend address**:
 
    ```sh
-   sudo python3 sigvid-install.py --version 0.1.0 \
+   sudo python3 sigvid-install.py --version 0.1.1 \
      --server https://your-sigvid-backend.example.com
    ```
 
@@ -31,21 +33,21 @@ No GitHub account is needed to download a published public release. GitHub never
 
 ## Verification and checks
 
-The installer downloads a fixed version's signed release manifest, verifies its RSA/SHA-256 signature against the public key embedded in the installer, checks the archive's exact size and SHA-256, and permits only the expected regular files before running the bundled installer. The bundled installer checks the `.deb` checksum, supported host and backend connectivity. There is no `latest` fallback, arbitrary repository override, HTTP download, or signature bypass.
+The installer checks the supported Ubuntu version and architecture before downloading. It then downloads a fixed version's signed release manifest, verifies its RSA/SHA-256 signature against the public key embedded in the installer, checks the archive's exact size and SHA-256, and permits only the expected regular files before running the bundled installer. The bundled installer checks the `.deb` checksum, supported host and backend connectivity. There is no `latest` fallback, arbitrary repository override, HTTP download, or signature bypass.
 
 The trust anchor is this installer obtained from the intended repository over HTTPS. A verified signature identifies the release signer; it does not establish threat-detection accuracy or eliminate the need to trust that signer. Pin the installer URL to the release tag or a reviewed commit. Keep the release public key fingerprint available through a trusted channel when distributing the installer independently.
 
 Check prerequisites without installing:
 
 ```sh
-sudo python3 sigvid-install.py --version 0.1.0 \
+sudo python3 sigvid-install.py --version 0.1.1 \
   --server https://your-sigvid-backend.example.com --check
 ```
 
 Download and verify without installing or enrolling (does not need sudo):
 
 ```sh
-python3 sigvid-install.py --version 0.1.0 --download-only ./sigvid-release-0.1.0
+python3 sigvid-install.py --version 0.1.1 --download-only ./sigvid-release-0.1.1
 ```
 
 A failed check stops before enrollment. If the server is already enrolled, its credential is preserved. Diagnose connectivity or service startup with:
@@ -73,10 +75,10 @@ Example staging command (paths are placeholders):
 
 ```sh
 python3 tools/prepare_release.py \
-  --bundle /path/to/tested/sigvid-agent-ubuntu24.04-amd64.tar.gz \
-  --version 0.1.0 \
+  --bundle /path/to/tested/sigvid-agent-ubuntu-amd64.tar.gz \
+  --version 0.1.1 \
   --signing-key /secure/location/private.pem \
-  --output dist/v0.1.0
+  --output dist/v0.1.1
 ```
 
 The signing private key must be backed up securely and never uploaded to GitHub. Key rotation requires a reviewed new installer/public key. The CI workflow tests the public installer with read-only repository permissions; building the private agent and publishing releases remain maintainer operations.
