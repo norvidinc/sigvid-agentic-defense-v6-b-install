@@ -1,10 +1,40 @@
-# Sigvid Agentic Defense V6 B — MVP installation
+# Sigvid Agentic Defense V6 Beta — installation and upgrades
 
 Public agent downloads and enrollment client for the **B MVP implementation** in `mvp-v1/`. This repository distributes the installer and release packages. Your Sigvid backend issues enrollment tokens and receives evidence.
 
 Supported host: **Ubuntu Server 22.04 or 24.04 LTS, amd64/x86_64**, with the system Python 3.10 or newer, OpenSSL and sudo. Response mode is **shadow only**. This is an early MVP release with deterministic SSH-failure, watched-file and source-health detections; it does not include adaptive AI investigation.
 
-Release `v0.1.1` adds Ubuntu 22.04 with its default Python 3.10. The original immutable `v0.1.0` supports Ubuntu 24.04 only. There is no need to replace the system Python to use the new release.
+The supported beta agent is **0.1.4**. The signed `channels/beta.json` selects the
+approved version, exact package and upgrade helper. Publishing another tag or
+building newer code does not promote it. The installed version is reported by
+your device and shown separately in **Devices & agents → Summary → Agent updates**.
+
+## Upgrade an enrolled server
+
+Run this on the enrolled Ubuntu server:
+
+```sh
+curl -fsS --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/norvidinc/sigvid-agentic-defense-v6-beta-install/main/install.sh | sudo sh -s -- --upgrade
+```
+
+No version argument is needed. The UI provides the same command with a device
+check. It selects the signed supported beta release automatically, uses the
+agent's saved backend connection, and preserves identity, settings, policy and
+evidence. The package and helper must match the signed promotion and the backend
+must be configured to serve that same release. GitHub never receives your host
+credential. Supported agents are upgraded only when you run the command.
+
+The command retains private recovery material, briefly restarts the services,
+and waits for the same device's fresh versions, retained inventory and drained
+queue. Running it again with identical installed binaries changes nothing. Newer
+installed versions are never automatically downgraded. A failure to confirm is
+reported as pending, rather than success. Keep the terminal open until it finishes.
+Python performs the checks internally using the system dependency already
+installed with the agent; you do not need to paste or maintain a Python program.
+
+Beta 0.1.4 adds native host inventory alongside the three standard sources;
+partial visibility is reported explicitly. Optional osquery remains opt-in.
+The immutable 0.1.0 and 0.1.1 releases remain available for historical use.
 
 ## Enroll your server
 
@@ -13,14 +43,14 @@ Release `v0.1.1` adds Ubuntu 22.04 with its default Python 3.10. The original im
 
    ```sh
    curl --fail --show-error --location --proto '=https' --tlsv1.2 \
-     https://raw.githubusercontent.com/norvidinc/sigvid-agentic-defense-v6-b-install/v0.1.1/install.py \
+     https://raw.githubusercontent.com/norvidinc/sigvid-agentic-defense-v6-beta-install/v0.1.4/install.py \
      --output sigvid-install.py
    ```
 
 3. Run it with **your reachable backend address**:
 
    ```sh
-   sudo python3 sigvid-install.py --version 0.1.1 \
+   sudo python3 sigvid-install.py \
      --server https://your-sigvid-backend.example.com
    ```
 
@@ -33,21 +63,28 @@ No GitHub account is needed to download a published public release. GitHub never
 
 ## Verification and checks
 
-The installer checks the supported Ubuntu version and architecture before downloading. It then downloads a fixed version's signed release manifest, verifies its RSA/SHA-256 signature against the public key embedded in the installer, checks the archive's exact size and SHA-256, and permits only the expected regular files before running the bundled installer. The bundled installer checks the `.deb` checksum, supported host and backend connectivity. There is no `latest` fallback, arbitrary repository override, HTTP download, or signature bypass.
+Enrollment verifies a fixed release's RSA/SHA-256 signature, exact archive size,
+SHA-256 and allowed file layout before running the bundled installer. Upgrades
+verify the signed beta promotion and its package/helper hashes. The shell launcher
+downloads a pinned installer commit and verifies its hash before running it.
+There is no arbitrary newest-build fallback, repository override or signature
+bypass. Public downloads require HTTPS. Private backend requests use the saved
+HTTPS connection or its pre-existing explicit isolated-lab HTTP setting, with no
+credentialed redirects.
 
 The trust anchor is this installer obtained from the intended repository over HTTPS. A verified signature identifies the release signer; it does not establish threat-detection accuracy or eliminate the need to trust that signer. Pin the installer URL to the release tag or a reviewed commit. Keep the release public key fingerprint available through a trusted channel when distributing the installer independently.
 
 Check prerequisites without installing:
 
 ```sh
-sudo python3 sigvid-install.py --version 0.1.1 \
+sudo python3 sigvid-install.py \
   --server https://your-sigvid-backend.example.com --check
 ```
 
 Download and verify without installing or enrolling (does not need sudo):
 
 ```sh
-python3 sigvid-install.py --version 0.1.1 --download-only ./sigvid-release-0.1.1
+python3 sigvid-install.py --download-only ./sigvid-release-0.1.4
 ```
 
 A failed check stops before enrollment. If the server is already enrolled, its credential is preserved. Diagnose connectivity or service startup with:
@@ -65,6 +102,21 @@ Never commit enrollment tokens, credentials, backend databases, private signing 
 
 ## Release maintenance
 
+The supported beta target has a separate, explicit promotion gate. After package
+qualification, `tools/promote_beta.py` signs a manifest from the exact package
+and reviewed upgrade helper. Commit each revision under `channels/history/` and
+copy that revision to `channels/beta.json` with its signature. Copy those exact
+bytes and the existing public key into the backend's upgrade package. Its package
+configuration must match the signed version, size and digest. Preserve older
+promotion records, signing keys and immutable release assets.
+
+Publish the signed package release and validated installer, then promote the
+channel and compatible backend. A channel/backend mismatch stops before any
+installation. Verify one canary before offering the command to more devices.
+Promotion does not start an unattended update. Do not rebuild a different package
+under an already-used version or infer support from a GitHub `latest` label.
+The broader automatic fleet updater remains outside this manual beta profile.
+
 - Build and validate the B MVP bundle in the implementation project. Reuse the exact tested artifact; do not upload a package from another implementation.
 - Run `tools/prepare_release.py` with that archive, a new fixed version and the release signing key stored outside this repository. It stages the archive, `release.json` and `release.json.sig` under an ignored output directory and verifies the signature locally.
 - Commit the installer/public key and the signed manifest under `releases/vVERSION/`. Run `python3 -m unittest discover -s tests -v` and review the files to be published.
@@ -76,9 +128,9 @@ Example staging command (paths are placeholders):
 ```sh
 python3 tools/prepare_release.py \
   --bundle /path/to/tested/sigvid-agent-ubuntu-amd64.tar.gz \
-  --version 0.1.1 \
+  --version 0.1.4 \
   --signing-key /secure/location/private.pem \
-  --output dist/v0.1.1
+  --output dist/v0.1.4
 ```
 
 The signing private key must be backed up securely and never uploaded to GitHub. Key rotation requires a reviewed new installer/public key. The CI workflow tests the public installer with read-only repository permissions; building the private agent and publishing releases remain maintainer operations.

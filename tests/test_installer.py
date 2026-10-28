@@ -6,7 +6,7 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('installer', ROOT / 'install.py')
@@ -114,6 +114,72 @@ class InstallerTests(unittest.TestCase):
 
     def test_embedded_key_matches_published_key(self):
         self.assertEqual(installer.PUBLIC_KEY.strip(), (ROOT / 'release-public-key.pem').read_text().strip())
+
+    def test_supported_channel_signature_and_immutable_record(self):
+        channel = ROOT / 'channels/beta.json'
+        signature = ROOT / 'channels/beta.json.sig'
+        manifest = installer.verify_channel(channel, signature)
+        self.assertEqual(manifest['version'], '0.1.4')
+        self.assertEqual(channel.read_bytes(), (ROOT / 'channels/history/beta-000001.json').read_bytes())
+        with tempfile.TemporaryDirectory() as directory:
+            altered = Path(directory) / 'beta.json'
+            altered.write_bytes(channel.read_bytes().replace(b'0.1.4', b'9.9.9'))
+            with self.assertRaises(installer.InstallError):
+                installer.verify_channel(altered, signature)
+        with patch.object(installer, 'verify_signature'):
+            for change in [{'channel': 'unreviewed'}, {'revision': 0}, {'version': None}, {'helper_sha256': 'bad'}, {'extra': True}]:
+                with tempfile.TemporaryDirectory() as directory:
+                    altered = Path(directory) / 'beta.json'
+                    altered.write_text(json.dumps(dict(manifest, **change)))
+                    with self.assertRaises(installer.InstallError):
+                        installer.verify_channel(altered, signature)
+
+    def test_automatic_upgrade_selection_and_distribution_refusals(self):
+        raw = (ROOT / 'channels/beta.json').read_bytes()
+        manifest = json.loads(raw)
+        helper = b'# controlled helper fixture\n'
+        manifest['helper_sha256'] = hashlib.sha256(helper).hexdigest()
+        target = {'available': True, 'release_sha256': hashlib.sha256(raw).hexdigest()}
+        public_calls, private_calls = [], []
+        def download(url, destination, limit):
+            public_calls.append(url)
+            destination.write_bytes(raw if url.endswith('.json') else b'signature fixture')
+        def backend(origin, credential, path, limit):
+            private_calls.append((origin, credential, path))
+            return json.dumps(target).encode() if path.endswith('/target') else helper
+        for failure in ('', 'target', 'helper'):
+            selected = dict(manifest)
+            if failure == 'helper':
+                selected['helper_sha256'] = '0' * 64
+            target['available'] = failure != 'target'
+            with patch.object(installer, 'enrolled_context', return_value=('h_1234567890abcdef', 'https://enrolled.example', 'private-credential')), \
+                    patch.object(installer, 'download', side_effect=download), \
+                    patch.object(installer, 'verify_channel', return_value=selected), \
+                    patch.object(installer, 'backend_read', side_effect=backend), \
+                    patch.object(installer.subprocess, 'run') as run:
+                if failure:
+                    with self.assertRaises(installer.InstallError):
+                        installer.upgrade_agent('h_1234567890abcdef', False)
+                    run.assert_not_called()
+                else:
+                    installer.upgrade_agent('h_1234567890abcdef', True)
+                    args = run.call_args.args[0]
+                    self.assertEqual(args[args.index('--version') + 1], '0.1.4')
+                    self.assertEqual(args[args.index('--sha256') + 1], manifest['package']['sha256'])
+                    self.assertIn('--check', args)
+                    self.assertNotIn('private-credential', ' '.join(args))
+        self.assertTrue(all('raw.githubusercontent.com/' + installer.REPOSITORY in u for u in public_calls))
+        self.assertTrue(all(origin == 'https://enrolled.example' for origin, _, _ in private_calls))
+        self.assertTrue(all('private-credential' not in u for u in public_calls))
+
+    def test_backend_redirect_and_response_bound(self):
+        with self.assertRaises(installer.InstallError):
+            installer.BackendRedirects().redirect_request(None, None, 302, '', {}, 'https://other.example')
+        response = io.BytesIO(b'oversized')
+        opener = Mock()
+        opener.open.return_value = response
+        with patch.object(installer, 'build_opener', return_value=opener), self.assertRaises(installer.InstallError):
+            installer.backend_read('https://enrolled.example', 'private', '/agent/upgrade/target', 4)
 
 
 if __name__ == '__main__':

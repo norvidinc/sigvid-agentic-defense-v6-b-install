@@ -1,0 +1,15 @@
+{
+  "schema": 2,
+  "project": "sigvid-agentic-defense-v6-b",
+  "version": "0.1.4",
+  "platform": "ubuntu-amd64",
+  "asset": {
+    "name": "sigvid-agent-ubuntu-amd64.tar.gz",
+    "sha256": "aac2145896047ad8272b8fac89d17c3f6de313b84bda11d09d3e57f64fe8bb83",
+    "size": 9640464
+  },
+  "supported_ubuntu": [
+    "22.04",
+    "24.04"
+  ]
+}
