@@ -36,6 +36,14 @@ Beta 0.1.4 adds native host inventory alongside the three standard sources;
 partial visibility is reported explicitly. Optional osquery remains opt-in.
 The immutable 0.1.0 and 0.1.1 releases remain available for historical use.
 
+An explicitly published release candidate can be selected for fresh installation
+with `--version 0.1.5-rc.1` (use the exact published RC number). Its signed manifest
+uses that version; the archive contains Debian's `0.1.5~rc.1` package filename.
+The installer verifies the exact RC and refuses a stable or different RC package
+in its place. An RC tag does not change the default installation version or the
+supported upgrade channel. RC availability and qualification are stated in the
+individual release notes; this syntax example does not announce a release.
+
 ## Enroll your server
 
 1. Open **Setup** in your Sigvid backend and create a one-time enrollment token for your server name.

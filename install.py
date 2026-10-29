@@ -44,9 +44,16 @@ class InstallError(Exception):
 
 
 def validate_version(value):
-    if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', value):
-        raise InstallError('Use a fixed version such as 0.1.0; latest and arbitrary URLs are not accepted.')
+    if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-rc\.[1-9][0-9]*)?', value):
+        raise InstallError('Use a fixed version such as 0.1.4 or 0.1.5-rc.1; latest and arbitrary URLs are not accepted.')
     return value
+
+
+def validate_supported_version(value):
+    version = validate_version(value)
+    if '-rc.' in version:
+        raise InstallError('Release candidates require explicit installation and cannot select the supported upgrade channel.')
+    return version
 
 
 def release_layout(version):
@@ -137,7 +144,7 @@ def verify_channel(path, signature):
             or not re.fullmatch('[0-9a-f]{64}', str(package.get('sha256')))
             or not re.fullmatch('[0-9a-f]{64}', str(manifest['helper_sha256']))):
         raise InstallError('Invalid supported beta release or platform.')
-    version = validate_version(manifest['version'])
+    version = validate_supported_version(manifest['version'])
     if package['name'] != f'sigvid-agent_{version}_amd64.deb':
         raise InstallError('Supported package name/version mismatch.')
     return manifest
@@ -220,7 +227,8 @@ def verify_archive(path, manifest):
 
 
 def unpack(path, destination, version):
-    expected = {'sigvid-agent/install.py', 'sigvid-agent/INSTALL.txt', 'sigvid-agent/SHA256SUMS', f'sigvid-agent/sigvid-agent_{version}_amd64.deb'}
+    package_version = validate_version(version).replace('-', '~', 1)
+    expected = {'sigvid-agent/install.py', 'sigvid-agent/INSTALL.txt', 'sigvid-agent/SHA256SUMS', f'sigvid-agent/sigvid-agent_{package_version}_amd64.deb'}
     with tarfile.open(path, 'r:gz') as archive:
         seen, directories, members = set(), set(), []
         total = 0

@@ -30,7 +30,11 @@ class InstallerTests(unittest.TestCase):
 
     def test_fixed_version_only(self):
         self.assertEqual(installer.validate_version('0.1.0'), '0.1.0')
-        for value in ['latest', 'v0.1.0', '../main', '0.1.0;id', '01.1.0', '0.1.0/asset']:
+        self.assertEqual(installer.validate_version('0.1.5-rc.1'), '0.1.5-rc.1')
+        self.assertEqual(installer.validate_version('0.1.5-rc.12'), '0.1.5-rc.12')
+        for value in ['latest', 'v0.1.0', '../main', '0.1.0;id', '01.1.0', '0.1.0/asset',
+                      '0.1.5-rc.0', '0.1.5-rc.01', '0.1.5-rc.1/asset', '0.1.5-rc.1;id', '0.1.5-rc.1\n',
+                      '0.1.5~rc.1', '0.1.5-beta.1', '0.1.5-rc.1+unreviewed']:
             with self.subTest(value=value), self.assertRaises(installer.InstallError):
                 installer.validate_version(value)
 
@@ -74,9 +78,9 @@ class InstallerTests(unittest.TestCase):
             with self.assertRaises(installer.InstallError):
                 installer.verify_archive(archive, manifest)
 
-    def make_archive(self, path, bad=None):
+    def make_archive(self, path, bad=None, package='sigvid-agent_0.1.0_amd64.deb'):
         with tarfile.open(path, 'w:gz') as archive:
-            for name in ['install.py', 'INSTALL.txt', 'SHA256SUMS', 'sigvid-agent_0.1.0_amd64.deb']:
+            for name in ['install.py', 'INSTALL.txt', 'SHA256SUMS', package]:
                 member = tarfile.TarInfo('sigvid-agent/' + name)
                 member.size = 3
                 archive.addfile(member, io.BytesIO(b'abc'))
@@ -101,6 +105,23 @@ class InstallerTests(unittest.TestCase):
                 with self.subTest(name=name, kind=kind), self.assertRaises(installer.InstallError):
                     installer.unpack(archive, directory, '0.1.0')
                 self.assertFalse((directory / 'sigvid-agent').exists())
+
+    def test_rc_archive_requires_exact_debian_prerelease(self):
+        for package in ['sigvid-agent_0.1.5~rc.1_amd64.deb', 'sigvid-agent_0.1.5-rc.1_amd64.deb',
+                        'sigvid-agent_0.1.5~rc.2_amd64.deb', 'sigvid-agent_0.1.5_amd64.deb']:
+            with self.subTest(package=package), tempfile.TemporaryDirectory() as directory:
+                directory = Path(directory)
+                archive = directory / 'bundle.tar.gz'
+                self.make_archive(archive, package=package)
+                if package == 'sigvid-agent_0.1.5~rc.1_amd64.deb':
+                    installer.unpack(archive, directory, '0.1.5-rc.1')
+                    self.assertEqual((directory / 'sigvid-agent' / package).read_bytes(), b'abc')
+                else:
+                    with self.assertRaises(installer.InstallError):
+                        installer.unpack(archive, directory, '0.1.5-rc.1')
+                    self.assertFalse((directory / 'sigvid-agent').exists())
+        with self.assertRaises(installer.InstallError):
+            installer.validate_supported_version('0.1.5-rc.1')
 
     def test_download_size_limit(self):
         class Response(io.BytesIO):
@@ -127,7 +148,7 @@ class InstallerTests(unittest.TestCase):
             with self.assertRaises(installer.InstallError):
                 installer.verify_channel(altered, signature)
         with patch.object(installer, 'verify_signature'):
-            for change in [{'channel': 'unreviewed'}, {'revision': 0}, {'version': None}, {'helper_sha256': 'bad'}, {'extra': True}]:
+            for change in [{'channel': 'unreviewed'}, {'revision': 0}, {'version': None}, {'version': '0.1.5-rc.1'}, {'helper_sha256': 'bad'}, {'extra': True}]:
                 with tempfile.TemporaryDirectory() as directory:
                     altered = Path(directory) / 'beta.json'
                     altered.write_text(json.dumps(dict(manifest, **change)))

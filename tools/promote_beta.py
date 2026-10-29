@@ -17,7 +17,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--package', type=Path, required=True)
     parser.add_argument('--helper', type=Path, required=True)
-    parser.add_argument('--version', type=installer.validate_version, required=True)
+    parser.add_argument('--version', type=installer.validate_supported_version, required=True)
     parser.add_argument('--revision', type=int, required=True)
     parser.add_argument('--signing-key', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
